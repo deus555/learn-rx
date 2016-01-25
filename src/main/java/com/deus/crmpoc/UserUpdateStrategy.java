@@ -5,6 +5,7 @@ import rx.schedulers.Schedulers;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.concurrent.TimeUnit;
 
 public class UserUpdateStrategy {
 
@@ -15,6 +16,15 @@ public class UserUpdateStrategy {
                 .from(userUpdateData)
                 .map(UserUpdateStrategy::updateUser)
                 .groupBy(UserUpdateResult::isSuccess)
+                .retryWhen(attempts -> {
+                    int retryCount = 5;
+                    return attempts
+                            .zipWith(Observable.range(1, retryCount), (n, i) -> i)
+                            .flatMap(i -> {
+                                System.out.println("delay retry by 1 second");
+                                return Observable.timer(1, TimeUnit.SECONDS);
+                            });
+                })
                 .subscribeOn(Schedulers.computation())
                 .subscribe(grouped -> {
                     grouped

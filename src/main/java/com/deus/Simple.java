@@ -6,7 +6,10 @@ public class Simple {
     public static void main(String[] args) {
         Observable
                 .just("doc1", "doc2", "doc3")
-                .map(String::valueOf)
-                .subscribe(document -> System.out.println("Got: " + document));
+                .flatMap(Observable::just)
+                .subscribe(
+                        document -> System.out.println("Got: " + document)
+                );
     }
+
 }

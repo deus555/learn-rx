@@ -1,17 +1,15 @@
 package com.deus.crmpoc;
 
+import rx.Notification;
 import rx.Observable;
 import rx.functions.Action1;
 import rx.functions.Func1;
-import rx.observables.BlockingObservable;
-import rx.observables.GroupedObservable;
 import rx.schedulers.Schedulers;
 
-import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static java.util.Arrays.asList;
 
@@ -27,46 +25,38 @@ public class UserUpdateStrategy {
                 new UserUpdateData()
         );
 
-        Func1<Observable<? extends Throwable>, Observable<?>> retryLogic = attempts -> {
-            int retryCount = 5;
-            return attempts
-                    .zipWith(Observable.range(1, retryCount), (n, i) -> i)
-                    .flatMap(i -> {
-                        System.out.println("delay retry by 1 second");
-                        return Observable.timer(1, TimeUnit.SECONDS);
-                    });
-        };
-
-        Func1<UserUpdateData, UserUpdateResult> mapLogic = user -> {
-            System.out.println("Map: (" + Thread.currentThread().getName() + ")");
-            return updateUser(user);
-        };
-
-        final AtomicInteger count = new AtomicInteger(0);
-
-        Action1<UserUpdateResult> updateResultLogic = result -> {
-            int c = count.getAndIncrement();
-
-            if (c % 2 == 0) {
-                System.out.println("Progress event");
-            }
-
-            System.out.println(result);
-        };
-
         Observable
                 .from(userUpdateData)
-                .observeOn(Schedulers.computation())
-                .map(mapLogic)
+                .subscribeOn(Schedulers.computation())
+                .map(updateLogic)
                 .retryWhen(retryLogic)
-                .doOnNext(result -> System.out.println("onNext update: " + result))
+                .buffer(2)
+                .doOnEach(progressNotification)
+                .flatMap(Observable::from)
                 .doOnCompleted(() -> System.out.println("Completed event"))
+                .toList()
                 .toBlocking()
-                .subscribe(updateResultLogic);
+                .subscribe(System.out::println);
 
     }
 
     private static UserUpdateResult updateUser(UserUpdateData data) {
         return new UserUpdateResult(new Random().nextInt(2) + 1 == 1);
     }
+
+    private static final Func1<Observable<? extends Throwable>, Observable<?>> retryLogic = attempts -> {
+        int retryCount = 5;
+        return attempts
+                .zipWith(Observable.range(1, retryCount), (n, i) -> i)
+                .flatMap(i -> {
+                    System.out.println("delay retry by 1 second");
+                    return Observable.timer(1, TimeUnit.SECONDS);
+                });
+    };
+    private static final Func1<UserUpdateData, UserUpdateResult> updateLogic = user -> {
+        System.out.println("Map: (" + Thread.currentThread().getName() + ")");
+        return updateUser(user);
+    };
+    private static final Action1<Notification<? super List<UserUpdateResult>>> progressNotification = item -> System.out.println("Progress event" + item.getKind());
+
 }

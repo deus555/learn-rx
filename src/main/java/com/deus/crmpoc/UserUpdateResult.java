@@ -2,9 +2,12 @@ package com.deus.crmpoc;
 
 public class UserUpdateResult {
     private boolean isSuccess;
+    private UserUpdateData user;
 
-    public UserUpdateResult(boolean isSuccess) {
+    public UserUpdateResult(boolean isSuccess, UserUpdateData user) {
+        this.user = user;
         this.isSuccess = isSuccess;
+
     }
 
     public boolean isSuccess() {
@@ -19,6 +22,7 @@ public class UserUpdateResult {
     public String toString() {
         return "UserUpdateResult{" +
                 "isSuccess=" + isSuccess +
+                ", user=" + user +
                 '}';
     }
 }

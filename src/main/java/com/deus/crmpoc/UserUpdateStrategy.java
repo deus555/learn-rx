@@ -2,6 +2,8 @@ package com.deus.crmpoc;
 
 import rx.Notification;
 import rx.Observable;
+import rx.Scheduler;
+import rx.Subscriber;
 import rx.functions.Action1;
 import rx.functions.Func1;
 import rx.schedulers.Schedulers;
@@ -9,54 +11,51 @@ import rx.schedulers.Schedulers;
 import java.util.Collection;
 import java.util.List;
 import java.util.Random;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 import static java.util.Arrays.asList;
 
 public class UserUpdateStrategy {
 
-    public static void main(String[] args) {
-        Collection<UserUpdateData> userUpdateData = asList(
-                new UserUpdateData(),
-                new UserUpdateData(),
-                new UserUpdateData(),
-                new UserUpdateData(),
-                new UserUpdateData(),
-                new UserUpdateData()
-        );
+    private static final ExecutorService threadPoolExecutor = Executors.newFixedThreadPool(4);
+    private static final Scheduler scheduler = Schedulers.from(threadPoolExecutor);
+
+    private static final UserServiceMock userServiceMock = new UserServiceMock();
+
+    public static void main(String[] args) throws InterruptedException {
 
         Observable
-                .from(userUpdateData)
-                .subscribeOn(Schedulers.computation())
-                .map(updateLogic)
-                .retryWhen(retryLogic)
-                .buffer(2)
-                .doOnEach(progressNotification)
+                .range(1, 20)
+                .map(UserUpdateData::new)
+                .subscribeOn(scheduler)
+                .flatMap(UserUpdateStrategy::updateUser)
+                //.retryWhen(retryLogic)
+                .buffer(5)
+                .doOnEach(item -> System.out.println("Progress event" + item.getKind()))
                 .flatMap(Observable::from)
                 .doOnCompleted(() -> System.out.println("Completed event"))
                 .toList()
                 .toBlocking()
                 .subscribe(System.out::println);
 
+        threadPoolExecutor.shutdown();
     }
 
-    private static UserUpdateResult updateUser(UserUpdateData data) {
-        return new UserUpdateResult(new Random().nextInt(2) + 1 == 1);
-    }
+    public static Observable<UserUpdateResult> updateUser(UserUpdateData data) {
+        return Observable
+                .just(data)
+                .subscribeOn(scheduler)
+                .map(userServiceMock::updateUser)
+                .retryWhen(attempts -> {
+                    int retryCount = 3;
 
-    private static final Func1<Observable<? extends Throwable>, Observable<?>> retryLogic = attempts -> {
-        int retryCount = 5;
-        return attempts
-                .zipWith(Observable.range(1, retryCount), (n, i) -> i)
-                .flatMap(i -> {
-                    System.out.println("delay retry by 1 second");
-                    return Observable.timer(1, TimeUnit.SECONDS);
+                    return attempts
+                            .zipWith(Observable.range(1, retryCount), (n, i) -> i)
+                            .flatMap(i -> {
+                                System.out.println("delay retry by 1 second ");
+
+                                return Observable.timer(1, TimeUnit.SECONDS);
+                            });
                 });
-    };
-    private static final Func1<UserUpdateData, UserUpdateResult> updateLogic = user -> {
-        System.out.println("Map: (" + Thread.currentThread().getName() + ")");
-        return updateUser(user);
-    };
-    private static final Action1<Notification<? super List<UserUpdateResult>>> progressNotification = item -> System.out.println("Progress event" + item.getKind());
-
+    }
 }
